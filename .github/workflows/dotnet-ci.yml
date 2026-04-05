@@ -3,30 +3,48 @@ name: .NET CI/CD Pipeline
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Наш попередній job для збірки та тестів
   build-and-test:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x' 
+        dotnet-version: '9.0.x'
+    - name: Build and Test
+      run: |
+        dotnet restore
+        dotnet build --configuration Release
+        dotnet test --configuration Release
 
-    - name: Restore dependencies
-      run: dotnet restore
+  # НОВИЙ job для розгортання
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-test # Запускати ТІЛЬКИ якщо тести пройшли успішно
+    if: github.ref == 'refs/heads/main' # Деплоїмо тільки з гілки main
 
-    - name: Build project
-      run: dotnet build --no-restore --configuration Release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Run Unit Tests
-      run: dotnet test --no-build --configuration Release --verbosity normal
+    - name: Deploy to Server via SSH
+      uses: appleboy/ssh-action@v1.0.3 # Популярний готовий action для SSH
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          # Команди, які виконаються на сервері:
+          cd ~/myapp
+          git pull origin main
+          dotnet publish -c Release -o ./publish
+          # Перезапуск сервісу (приклад для systemd)
+          # sudo systemctl restart my-dotnet-app
+          echo "Deployment successful!"
